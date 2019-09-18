@@ -65,7 +65,7 @@
 
 #include <sys/stat.h>
 
-#define SIMULATION_TIME_FORMAT(s) Seconds(s)
+#define SIMULATION_TIME_FORMAT(s) Minutes(s)
 
 using namespace ns3;
 
@@ -73,9 +73,9 @@ double TxRate = 0;
 bool useCbr = false;
 bool verbose = false;
 
-const int node_ue = 20;
+const int node_ue = 10;
 
-const uint16_t enb_HPN = 9;
+const uint16_t enb_HPN = 10;
 const uint16_t low_power = 0;
 const uint16_t hot_spot = 0;
 
@@ -191,15 +191,48 @@ void ArrayPositionAllocator(Ptr < ListPositionAllocator > HpnPosition) {
     std::ifstream pos_file("CellsDataset");
     int cellId;
     double x_coord, y_coord;
+    char a;
 
-    while (pos_file >> cellId >> x_coord >> y_coord) {
+    while (pos_file >> cellId >> x_coord >> y_coord >> a) {
         NS_LOG_INFO("Adding cell " << cellId <<
             " to coordinates x:" << x_coord << " y:" << y_coord);
         HpnPosition -> Add(Vector(x_coord, y_coord, 30));
     }
 }
 
-void requestService() {}
+void requestService(Ptr <Node> ueNode, Ptr <Node> MECNode) {
+    // // TODO: wrap this in a method
+    uint16_t cbrPort = 3000;
+    ApplicationContainer clientApps;
+    ApplicationContainer serverApps;
+    // get cbr node
+    // Ptr < Node > ueNode = MECNodes.Get(u);
+
+    // get node address
+    Ptr < Ipv4 > ipv4 = ueNode -> GetObject < Ipv4 > ();
+    Ipv4InterfaceAddress iaddr = ipv4 -> GetAddress(1, 0);
+    Ipv4Address addri = iaddr.GetLocal();
+
+    // install server on MEC node
+    PacketSinkHelper packetSinkHelper(
+        "ns3::UdpSocketFactory",
+        InetSocketAddress(Ipv4Address::GetAny(), cbrPort));
+    serverApps.Add(packetSinkHelper.Install(ueNode));
+    serverApps.Start(Seconds(2));
+
+    // install client on remote host
+    // todo: 
+    int load = 1024;
+    UdpClientHelper client(addri, cbrPort);
+    client.SetAttribute("Interval", TimeValue(MilliSeconds(100)));
+    client.SetAttribute("MaxPackets", UintegerValue(1000));
+    client.SetAttribute("PacketSize", UintegerValue(load));
+    clientApps.Add(client.Install(MECNode));
+
+    clientApps.Start(Seconds(3));
+}
+
+// todo
 void migrateService() {}
 
 int main(int argc, char * argv[]) {
@@ -224,7 +257,6 @@ int main(int argc, char * argv[]) {
     }
 
     //-------------Parâmetros da simulação
-    uint16_t node_remote = 1; // HOST_REMOTO
     /*----------------------------------------------------------------------*/
 
     // Bandwidth of Dl and Ul in Resource Blocks
@@ -237,20 +269,18 @@ int main(int argc, char * argv[]) {
 
     Config::SetDefault("ns3::LteEnbRrc::SrsPeriodicity", UintegerValue(320));
 
-    /*------------------------- MÓDULOS LTE ----------------------*/
+    // ------------------------- lte and epc helper ----------------------
     Ptr < LteHelper > lteHelper = CreateObject < LteHelper > ();
     Ptr < EpcHelper > epcHelper;
     epcHelper = CreateObject < NoBackhaulEpcHelper > ();
-
-    Ptr < Node > pgw = epcHelper -> GetPgwNode();
-
     lteHelper -> SetEpcHelper(epcHelper);
+    Ptr < Node > pgw = epcHelper -> GetPgwNode();
 
     // LTE configuration
     lteHelper -> SetSchedulerType("ns3::PssFfMacScheduler");
     lteHelper -> SetSchedulerAttribute("nMux", UintegerValue(1)); // the maximum number of UE selected by TD scheduler
     lteHelper -> SetSchedulerAttribute("PssFdSchedulerType", StringValue("CoItA")); // PF scheduler type in PSS
-    lteHelper -> SetHandoverAlgorithmType("ns3::A3RsrpHandoverAlgorithm");
+    lteHelper -> SetHandoverAlgorithmType("ns3::NoOpHandoverAlgorithm");
     lteHelper -> EnableTraces();
 
     // Propagation Parameters
@@ -259,50 +289,51 @@ int main(int argc, char * argv[]) {
     lteHelper -> SetAttribute("PathlossModel",
         StringValue("ns3::NakagamiPropagationLossModel"));
 
-    ConfigStore inputConfig;
-    inputConfig.ConfigureDefaults();
-
-    // real RRC modeling
-    // May cause lost messages
-    Config::SetDefault("ns3::LteHelper::UseIdealRrc", BooleanValue(false));
-
     //-------------Antenna Parameters
     lteHelper -> SetEnbAntennaModelType("ns3::CosineAntennaModel");
     lteHelper -> SetEnbAntennaModelAttribute("Orientation", DoubleValue(0));
     lteHelper -> SetEnbAntennaModelAttribute("Beamwidth", DoubleValue(60));
     lteHelper -> SetEnbAntennaModelAttribute("MaxGain", DoubleValue(0.0));
 
-    // Remote host creation
-    NodeContainer remoteHostContainer;
-    remoteHostContainer.Create(node_remote);
-    Ptr < Node > remoteHost = remoteHostContainer.Get(0);
+    ConfigStore inputConfig;
+    inputConfig.ConfigureDefaults();
+    Config::SetDefault("ns3::LteHelper::UseIdealRrc", BooleanValue(false));
 
+    // ----------------internet configuration ------------------------------------
     // Pilha de Internet
     InternetStackHelper internet;
-    internet.Install(remoteHost);
-
-    // Cria link Internet
-    PointToPointHelper p2ph;
-    p2ph.SetDeviceAttribute("DataRate", DataRateValue(DataRate("100Gb/s")));
-    p2ph.SetDeviceAttribute("Mtu", UintegerValue(1400));
-    p2ph.SetChannelAttribute("Delay", TimeValue(Seconds(0.010)));
-    NetDeviceContainer internetDevices = p2ph.Install(pgw, remoteHost);
-
+    
     // Address for the network between PGW and Remote Host
     Ipv4AddressHelper ipv4h;
     ipv4h.SetBase("10.1.0.0", "255.255.0.0");
     Ipv4InterfaceContainer internetIpIfaces;
-    internetIpIfaces = ipv4h.Assign(internetDevices);
 
+    // Remote host creation
+    NodeContainer remoteHostContainer;
+    remoteHostContainer.Create(enb_HPN);
+    Ptr < Node > remoteHost = remoteHostContainer.Get(0);
+
+    for (uint16_t i = 0; i < enb_HPN; ++i)
+    {
+        internet.Install(remoteHostContainer.Get(i));
+        // Link core to internet
+        PointToPointHelper p2ph;
+        p2ph.SetDeviceAttribute("DataRate", DataRateValue(DataRate("100Gb/s")));
+        p2ph.SetDeviceAttribute("Mtu", UintegerValue(1400));
+        p2ph.SetChannelAttribute("Delay", TimeValue(Seconds(0)));
+        NetDeviceContainer internetDevices = p2ph.Install(pgw, remoteHostContainer.Get(i));
+        internetIpIfaces = ipv4h.Assign(internetDevices);
+    }
     // add route from remote host to UEs
     Ipv4StaticRoutingHelper ipv4RoutingHelper;
     Ptr < Ipv4StaticRouting > remoteHostStaticRouting = ipv4RoutingHelper.GetStaticRouting(remoteHost -> GetObject < Ipv4 > ());
     remoteHostStaticRouting -> AddNetworkRouteTo(Ipv4Address("7.0.0.0"),
         Ipv4Mask("255.0.0.0"), 1);
 
+    //--------------------------------------------------------------------------------------
     // Network nodes creation
-    NodeContainer nodesUe;
-    nodesUe.Create(node_ue);
+    NodeContainer ueNodes;
+    ueNodes.Create(node_ue);
 
     NodeContainer enbNodes;
     enbNodes.Create(node_enb);
@@ -310,10 +341,11 @@ int main(int argc, char * argv[]) {
     NodeContainer MECNodes;
     MECNodes.Create(node_enb);
 
-    internet.Install(nodesUe);
+    internet.Install(ueNodes);
     internet.Install(MECNodes);
 
-    /*-----------------POSIÇÃO DAS TORRES----------------------------------*/
+
+    /*-----------------POSITION AND MOBILITY----------------------------------*/
     Ptr < ListPositionAllocator > HpnPosition = CreateObject < ListPositionAllocator > ();
     ArrayPositionAllocator(HpnPosition);
 
@@ -328,26 +360,26 @@ int main(int argc, char * argv[]) {
     remoteHostMobility.Install(remoteHost);
     remoteHostMobility.Install(pgw);
 
-    /*-----------------MONILIDADE DAS TORRES --------------*/
     // User Devices mobility
     Ns2MobilityHelper ue_mobil = Ns2MobilityHelper("mobil/mobility_25_users.tcl");
     MobilityHelper ueMobility;
     MobilityHelper enbMobility;
 
-    ue_mobil.Install(nodesUe.Begin(), nodesUe.End());
+    ue_mobil.Install(ueNodes.Begin(), ueNodes.End());
 
-    //-------------Instala LTE Devices para cada grupo de nós
+    //-------------lte devices---------------------------------
     NetDeviceContainer enbLteDevs;
     enbLteDevs = lteHelper -> InstallEnbDevice(enbNodes);
     NetDeviceContainer ueLteDevs;
-    ueLteDevs = lteHelper -> InstallUeDevice(nodesUe);
+    ueLteDevs = lteHelper -> InstallUeDevice(ueNodes);
 
+    // ------------sgw install--------------------------------
     Ptr < Node > sgw = epcHelper -> GetSgwNode();
 
     Ipv4AddressHelper s1uIpv4AddressHelper;
 
     // Create networks of the S1 interfaces
-    s1uIpv4AddressHelper.SetBase("10.0.0.0", "255.255.255.252");
+    s1uIpv4AddressHelper.SetBase("10.0.0.0", "255.255.255.0");
 
     for (uint16_t i = 0; i < enbNodes.GetN(); ++i) {
         Ptr < Node > enb = enbNodes.Get(i);
@@ -377,75 +409,21 @@ int main(int argc, char * argv[]) {
     Ipv4InterfaceContainer ueIpIface;
     ueIpIface = epcHelper -> AssignUeIpv4Address(NetDeviceContainer(ueLteDevs));
 
-    // add routes from user devides to network gateway
-    // in lte, the gateway is the pgw node, connected to the remote host
-    for (uint32_t u = 0; u < nodesUe.GetN(); ++u) {
-        Ptr < Node > ueNode = nodesUe.Get(u);
-        Ptr < Ipv4StaticRouting > ueStaticRouting = ipv4RoutingHelper.GetStaticRouting(ueNode -> GetObject < Ipv4 > ());
-        ueStaticRouting -> SetDefaultRoute(epcHelper -> GetUeDefaultGatewayAddress(), 1);
-    }
-
-    // attach mec servers to enodeb's
-    PointToPointHelper p2pMEC;
-    p2pMEC.SetDeviceAttribute("DataRate", DataRateValue(DataRate("100Gb/s")));
-    p2pMEC.SetDeviceAttribute("Mtu", UintegerValue(1400));
-    p2pMEC.SetChannelAttribute("Delay", TimeValue(Seconds(0.02)));
-
-    NetDeviceContainer MECDevice;
-    Ipv4AddressHelper address;
-    address.SetBase("6.6.6.0", "255.255.255.0");
-
-    for (uint16_t i = 0; i < MECNodes.GetN(); ++i) {
-        MECDevice = p2pMEC.Install(enbNodes.Get(i), MECNodes.Get(i));
-        Ipv4InterfaceContainer interfaces = address.Assign(MECDevice);
-    }
-
-    // // TODO: wrap this in a method
-    uint16_t cbrPort = 3000;
-    ApplicationContainer clientApps;
-    ApplicationContainer serverApps;
-    for (uint32_t u = 0; u < MECNodes.GetN(); ++u) {
-
-        // get cbr node
-        Ptr < Node > ueNode = MECNodes.Get(u);
-
-        // get node address
-        Ptr < Ipv4 > ipv4 = ueNode -> GetObject < Ipv4 > ();
-        Ipv4InterfaceAddress iaddr = ipv4 -> GetAddress(1, 0);
-        Ipv4Address addri = iaddr.GetLocal();
-
-        // install server on MEC node
-        PacketSinkHelper packetSinkHelper(
-            "ns3::UdpSocketFactory",
-            InetSocketAddress(Ipv4Address::GetAny(), cbrPort));
-        serverApps.Add(packetSinkHelper.Install(ueNode));
-        serverApps.Start(Seconds(2));
-
-        // install client on remote host
-        // todo: 
-        int load = 1024;
-        UdpClientHelper client(addri, cbrPort);
-        client.SetAttribute("Interval", TimeValue(MilliSeconds(1)));
-        client.SetAttribute("MaxPackets", UintegerValue(1000));
-        client.SetAttribute("PacketSize", UintegerValue(load));
-        clientApps.Add(client.Install(nodesUe.Get(u)));
-
-        clientApps.Start(Seconds(3));
-    }
-
     // attach nodes and add x2 (for signaling) interface to enbs
     lteHelper -> Attach(ueLteDevs);
+    for (uint16_t i = 0; i < ueNodes.GetN(); ++i)
+        requestService(enbNodes.Get(i),remoteHost);
     lteHelper -> AddX2Interface(enbNodes);
 
     /*----------------NETANIM CONFIGURATION----------------*/
-    AnimationInterface anim("pandora_tmp/LTEnormal_v2x.xml");
+    AnimationInterface anim("pandora_anim.xml");
     for (uint32_t i = 0; i < enbNodes.GetN(); ++i) {
         anim.UpdateNodeDescription(enbNodes.Get(i), "eNb");
         anim.UpdateNodeColor(enbNodes.Get(i), 0, 255, 0);
     }
-    for (uint32_t i = 0; i < nodesUe.GetN(); ++i) {
-        anim.UpdateNodeDescription(nodesUe.Get(i), "UE Carro");
-        anim.UpdateNodeColor(nodesUe.Get(i), 255, 0, 0);
+    for (uint32_t i = 0; i < ueNodes.GetN(); ++i) {
+        anim.UpdateNodeDescription(ueNodes.Get(i), "UE Carro");
+        anim.UpdateNodeColor(ueNodes.Get(i), 255, 0, 0);
     }
     anim.UpdateNodeDescription(remoteHost, "RH");
     anim.UpdateNodeColor(remoteHost, 0, 255, 255);

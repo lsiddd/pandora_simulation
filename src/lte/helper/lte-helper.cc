@@ -504,7 +504,31 @@ Ptr<NetDevice>
 LteHelper::InstallSingleEnbDevice (Ptr<Node> n)
 {
   NS_LOG_FUNCTION (this << n);
-  uint16_t cellId = m_cellIdCounter; // \todo Remove, eNB has no cell ID
+  uint16_t cellId; // = m_cellIdCounter; // \todo Remove, eNB has no cell ID
+
+  // -----CHECK IF THE RALLOC SIMULATION IF BEING RUN---------------
+  static int cell_iter_dataset = 0;
+  // if (infile.good())
+  // {
+    std::ifstream cellsDataset("CellsDataset");
+    if (cellsDataset.good())
+    {
+      int a, lineCounter=0;
+      double b, c;
+      char d;
+      while(cellsDataset >> a >> b >> c >> d)
+      {
+        if (cell_iter_dataset == lineCounter)
+        {
+          m_cellIdCounter = a;
+        }
+        lineCounter++;
+      }
+      NS_LOG_DEBUG("LteHelper::InstallSingleEnbDevice Creating eNB id: " << m_cellIdCounter);
+      cell_iter_dataset++;
+      // m_cellIdCounter = cell_iter_dataset;
+      cellId = m_cellIdCounter; // \todo Remove, eNB has no cell ID
+    }
 
   Ptr<LteEnbNetDevice> dev = m_enbNetDeviceFactory.Create<LteEnbNetDevice> ();
   Ptr<LteHandoverAlgorithm> handoverAlgorithm = m_handoverAlgorithmFactory.Create<LteHandoverAlgorithm> ();
