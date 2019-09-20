@@ -73,19 +73,19 @@ double TxRate = 0;
 bool useCbr = false;
 bool verbose = false;
 
-const int node_ue = 10;
+const int number_of_ue = 10;
 
-const uint16_t enb_HPN = 10;
-const uint16_t low_power = 0;
-const uint16_t hot_spot = 0;
+const uint16_t number_of_mc = 10;
+const uint16_t number_of_sc = 0;
+const uint16_t number_of_hs = 0;
 
-const int node_enb = enb_HPN + low_power + hot_spot;
+const int node_enb = number_of_mc + number_of_sc + number_of_hs;
 
-uint16_t n_cbr = useCbr ? enb_HPN + low_power : 0;
+uint16_t n_cbr = useCbr ? number_of_mc + number_of_sc : 0;
 
-int hpnTxPower = 46;
-int lpnTxPower = 23;
-int hpTxPower = 15;
+int mcTxPower = 46;
+int scTxPower = 23;
+int hsTxPower = 15;
 
 double simTime = 10;
 
@@ -332,10 +332,10 @@ int main(int argc, char * argv[]) {
     remoteHostStaticRouting -> AddNetworkRouteTo(Ipv4Address("7.0.0.0"), Ipv4Mask("255.0.0.0"), 1);
 /*
     NodeContainer remoteHostContainer;
-    remoteHostContainer.Create(enb_HPN);
+    remoteHostContainer.Create(number_of_mc);
     Ptr < Node > remoteHost = remoteHostContainer.Get(0);
 
-    for (uint16_t i = 0; i < enb_HPN; ++i)
+    for (uint16_t i = 0; i < number_of_mc; ++i)
     {
         internet.Install(remoteHostContainer.Get(i));
         // Link core to internet
@@ -355,7 +355,7 @@ int main(int argc, char * argv[]) {
     //--------------------------------------------------------------------------------------
     // Network nodes creation
     NodeContainer ueNodes;
-    ueNodes.Create(node_ue);
+    ueNodes.Create(number_of_ue);
 
     NodeContainer enbNodes;
     enbNodes.Create(node_enb);
