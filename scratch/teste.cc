@@ -65,6 +65,8 @@
 
     #include <sys/stat.h>
 
+    #include "ns3/output-stream-wrapper.h"
+
     #define SIMULATION_TIME_FORMAT(s) Seconds(s)
 
     using namespace ns3;
@@ -289,33 +291,88 @@
     enbNodes.Create (number_of_mc);
     ueNodes.Create (number_of_ue);
 
+    NodeContainer MecContainer;
+    MecContainer.Create (number_of_mc);
+   
     // Create a single RemoteHost
     NodeContainer remoteHostContainer;
     remoteHostContainer.Create (1);
     Ptr<Node> remoteHost = remoteHostContainer.Get (0);
     InternetStackHelper internet;
     internet.Install (remoteHostContainer);
+    internet.Install (MecContainer);
 
     // Create the Internet
     PointToPointHelper p2ph;
     p2ph.SetDeviceAttribute ("DataRate", DataRateValue (DataRate ("100Gb/s")));
     p2ph.SetDeviceAttribute ("Mtu", UintegerValue (1500));
     p2ph.SetChannelAttribute ("Delay", TimeValue (MilliSeconds (10)));
-    NetDeviceContainer internetDevices = p2ph.Install (pgw, remoteHost);
+
+    NetDeviceContainer MecDevices;
+    NetDeviceContainer PgwDevice;
+    for (uint16_t u = 0; u < number_of_mc; u++)
+    {
+      NetDeviceContainer c = p2ph.Install (pgw, MecContainer.Get (u));
+      PgwDevice.Add (c.Get(0));
+      MecDevices.Add (c.Get(1));
+    }
+
+    Ipv4InterfaceContainer PgwInterfaces;
+    Ipv4InterfaceContainer MecInterfaces;
+
+    //Ipv4AddressHelper pgwRouterIpv4 ("192.168.0.0", "255.255.0.0");
+    //Ipv4InterfaceContainer pgwRouterInterfaces = pgwRouterIpv4.Assign(pgwRouterDevices);
+
+    //Ipv4AddressHelper internetIpv4 ("1.0.0.0", "255.0.0.0");
     Ipv4AddressHelper ipv4h;
     ipv4h.SetBase ("1.0.0.0", "255.0.0.0");
-    Ipv4InterfaceContainer internetIpIfaces = ipv4h.Assign (internetDevices);
+    for (uint16_t r = 0; r < number_of_mc; ++r)
+    {
+      NetDeviceContainer ndc;
+      ndc.Add (PgwDevice.Get (r));
+      ndc.Add (MecDevices.Get (r));
+      Ipv4InterfaceContainer ifc = ipv4h.Assign (ndc);
+      PgwInterfaces.Add (ifc.Get (0));
+      MecInterfaces.Add (ifc.Get (1));
+    }
+
+    Ipv4StaticRoutingHelper ipv4RoutingHelper;
+
+    uint16_t j = 1;
+    for (uint16_t u = 0; u < number_of_mc; u++)
+    {
+      std::stringstream ss;
+      ss << u + j;
+      Ptr<Ipv4StaticRouting> MecRouting = ipv4RoutingHelper.GetStaticRouting (MecContainer.Get (u)->GetObject<Ipv4> ());
+      MecRouting->AddNetworkRouteTo (Ipv4Address ("7.0.0.0"),Ipv4Mask ("255.0.0.0"),Ipv4Address(("1.0.0." + ss.str()).c_str()), 1);
+      j++;
+    }
+
+    Ptr<Ipv4StaticRouting> PgwRouting = ipv4RoutingHelper.GetStaticRouting (pgw->GetObject<Ipv4> ());
+    //PgwRouting->AddNetworkRouteTo (Ipv4Address ("1.0.0.0"),Ipv4Mask ("255.0.0.0"),1);
+    j = 2;
+    for (uint16_t u = 0; u < number_of_mc; u++)
+    {
+      std::stringstream ss;
+      ss << u + j;
+      PgwRouting->AddHostRouteTo (Ipv4Address (("1.0.0." + ss.str()).c_str()), j+1);
+      j++;
+    }
+    //Ptr<Ipv4StaticRouting> pgwStaticRouting = ipv4RoutingHelper.GetStaticRouting (pgw->GetObject<Ipv4> ());
+    //pgwStaticRouting->AddNetworkRouteTo (Ipv4Address ("1.0.0.0"),Ipv4Mask ("255.0.0.0"),Ipv4Address("192.168.0.2"), 2);
+
+
+    //NetDeviceContainer internetDevices = p2ph.Install (pgw, remoteHost);
+    //Ipv4InterfaceContainer internetIpIfaces = ipv4h.Assign (internetDevices);
     // interface 0 is localhost, 1 is the p2p device
-    Ipv4Address remoteHostAddr = internetIpIfaces.GetAddress (1);
+    /*Ipv4Address remoteHostAddr = internetIpIfaces.GetAddress (1);
     NS_LOG_UNCOND(remoteHostAddr);
 
     Ipv4StaticRoutingHelper ipv4RoutingHelper;
     Ptr<Ipv4StaticRouting> remoteHostStaticRouting = ipv4RoutingHelper.GetStaticRouting (remoteHost->GetObject<Ipv4> ());
     remoteHostStaticRouting->AddNetworkRouteTo (Ipv4Address ("7.0.0.0"), Ipv4Mask ("255.0.0.0"), 1);
 
-    NodeContainer MecContainer;
-    MecContainer.Create (number_of_mc);
-    internet.Install (MecContainer);
+
     NetDeviceContainer internetDevices2;
     ipv4h.SetBase ("3.0.0.0", "255.0.0.0");
 
@@ -365,8 +422,8 @@
     // Install LTE Devices to the nodes
     NetDeviceContainer enbLteDevs = lteHelper->InstallEnbDevice (enbNodes);
     NetDeviceContainer ueLteDevs = lteHelper->InstallUeDevice (ueNodes);
-    Ipv4Address addr = remoteHostAddr;
-      Ipv4AddressHelper s1uIpv4AddressHelper;
+    //Ipv4Address addr = remoteHostAddr;
+    Ipv4AddressHelper s1uIpv4AddressHelper;
 
       // Create networks of the S1 interfaces
       s1uIpv4AddressHelper.SetBase ("10.0.0.0", "255.255.255.252");
@@ -391,7 +448,7 @@
 
           Ipv4Address sgwS1uAddress = sgwEnbIpIfaces.GetAddress (0);
           Ipv4Address enbS1uAddress = sgwEnbIpIfaces.GetAddress (1);
-          addr = enbS1uAddress;
+          //addr = enbS1uAddress;
 
           // Create S1 interface between the SGW and the eNB
           epcHelper->AddS1Interface (enb, enbS1uAddress, sgwS1uAddress);
@@ -411,8 +468,16 @@
     }
 
     lteHelper->Attach(ueLteDevs);
+    for (uint32_t u = 0; u < ueNodes.GetN (); ++u)
+    {
+      requestService(ueNodes.Get(u), MecContainer.Get(u), ueIpIface.GetAddress(u));
+    }
+    
 
-    requestService(ueNodes.Get(0), MecContainer.Get(0), ueIpIface.GetAddress(0));
+    Ptr<OutputStreamWrapper> routingStream = Create<OutputStreamWrapper> 
+    ("static-global-routing.routes", std::ios::out);
+    ipv4RoutingHelper.PrintRoutingTableAllAt (Seconds (1), routingStream);
+
 
 
     // // Install and start applications on UEs and remote host
