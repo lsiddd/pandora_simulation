@@ -301,7 +301,6 @@ def build(bld):
         'model/lte-rrc-header.h',
         'model/lte-handover-management-sap.h',
         'model/lte-handover-algorithm.h',
-        'model/a2-a4-rsrq-handover-algorithm.h',
         'model/a3-rsrp-handover-algorithm.h',
         'model/no-op-handover-algorithm.h',
         'model/lte-anr-sap.h',
