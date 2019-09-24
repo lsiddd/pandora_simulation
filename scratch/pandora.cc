@@ -96,11 +96,13 @@ void NotifyConnectionEstablishedUe(std::string context,
     outfile << imsi << std::endl;
     outfile.close();
 
+    // zero the node's previous connection
     for (uint16_t i =0; i < number_of_mc; ++i)
     {
         ::cell_ue[i][imsi - 1] = 0;
     }
 
+    // record the current cell in the matrix
     ::cell_ue[cellid - 1][imsi - 1] = rnti;
 }
 
@@ -199,7 +201,7 @@ uint16_t getServingCellId(uint16_t ueId)
     for (uint16_t i = 0; i < number_of_mc; ++i)
     {
         if (::cell_ue[i][ueId - 1] != 0)
-            servingCellId = i + 1;
+            servingCellId = i;
     }
     return servingCellId;
 }
@@ -480,10 +482,13 @@ main(int argc, char * argv[]) {
     }
 
     lteHelper->Attach(ueLteDevs);
+    lteHelper->AddX2Interface(enbNodes);
 
     // checkDelay(ueNodes.Get(0), MecContainer.Get(0), ueIpIface.GetAddress(0));
     for (uint16_t i = 1; i < 10; ++i)
         Simulator::Schedule(Seconds(i), &checkDelay, ueNodes.Get(0), MecContainer.Get(0), ueIpIface.GetAddress(0));
+
+    Simulator::Schedule(Seconds(5), &executeHandover, lteHelper, 1, 5, ueLteDevs, enbLteDevs);
 
     for (uint32_t u = 0; u < ueNodes.GetN (); ++u)
     {
@@ -510,7 +515,7 @@ main(int argc, char * argv[]) {
     // Uncomment to enable PCAP tracing
     //p2ph.EnablePcapAll("lena-simple-epc-backhaul");
 
-    Simulator::Stop(Seconds(10));
+    Simulator::Stop(Seconds(20));
 
     /*--------------HANDOVER NOTIFICATIONS-------------------------*/
     Config::Connect("/NodeList/*/DeviceList/*/LteUeRrc/ConnectionEstablished",
