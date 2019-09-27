@@ -30,6 +30,10 @@
 #include "ns3/point-to-point-helper.h"
 #include "ns3/lte-helper.h"
 #include "ns3/epc-helper.h"
+#include "ns3/packet-sink.h"
+#include "ns3/on-off-helper.h"
+#include "ns3/packet-sink-helper.h"
+#include "ns3/onoff-application.h"
 #include "ns3/lte-module.h"
 #include "ns3/string.h"
 #include "ns3/double.h"
@@ -74,9 +78,89 @@ double qoeLastValue = 0;
 
 int cell_ue[number_of_mc][number_of_ue];
 
+NodeContainer ueNodes;
+Ptr < Node > mec;
+Ptr < Node > mecdelay;
+uint16_t type=1;
+ApplicationContainer clientApps_G;
+ApplicationContainer serverApps_G;
+
 NS_LOG_COMPONENT_DEFINE("pandora");
 
 /*------------------------- NOTIFICAÇÕES DE HANDOVER ----------------------*/
+void requestService(Ptr < Node > ueNode, Ptr < Node > MECNode, Ipv4Address ueAddress) {
+    Time interPacketInterval = MilliSeconds(10);
+    // Install and start applications on UEs and remote host
+    uint16_t dlPort = 1100;
+    uint16_t ulPort = 2000;
+    PacketSinkHelper dlPacketSinkHelper("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), dlPort));
+    serverApps_G.Add(dlPacketSinkHelper.Install(ueNode));
+
+    UdpClientHelper dlClient(ueAddress, dlPort);
+    dlClient.SetAttribute("Interval", TimeValue(interPacketInterval));
+    dlClient.SetAttribute("MaxPackets", UintegerValue(1000000));
+    ::clientApps_G.Add(dlClient.Install(MECNode));
+/*
+    ++ulPort;
+    PacketSinkHelper ulPacketSinkHelper("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), ulPort));
+    serverApps_G.Add(ulPacketSinkHelper.Install(MECNode));
+
+    Ptr < Ipv4 > ipv4 = MECNode->GetObject < Ipv4 > ();
+    Ipv4InterfaceAddress iaddr = ipv4->GetAddress(1, 0);
+    Ipv4Address addri = iaddr.GetLocal();
+    UdpClientHelper ulClient(addri, ulPort);
+    ulClient.SetAttribute("Interval", TimeValue(interPacketInterval));
+    ulClient.SetAttribute("MaxPackets", UintegerValue(1000000));
+    clientApps_G.Add(ulClient.Install(ueNode));*/
+
+    //serverApps_G.Start(MilliSeconds(500));
+    clientApps_G.Start(MilliSeconds(500));
+    //clientApps_G.Stop(MilliSeconds(2500));
+
+}
+
+void migrateService(uint16_t imsi, uint16_t targetCellId, uint16_t type)
+{
+    NS_LOG_UNCOND("Migração");
+    Ptr < Node > oldMEC=mec;
+    Ptr < Node > newMEC=mecdelay;
+    Ptr < Node > node = ueNodes.Get(imsi-1);
+
+    if (type==1)
+    {
+        //Config::Set ("/NodeList/*/AplicattionList/*/$ns3::PacketSink/StopTime", ns3::TimeValue (Simulator::Now()));
+        //::clientApps_G.Stop(Simulator::Now());
+        //::serverApps_G.Stop(Simulator::Now());
+        Ptr<Application> app = node->GetApplication(0);
+        NS_LOG_UNCOND(node->GetNApplications());
+        app->SetStartTime(Simulator::Now());
+        //app.Stop(Simulator::Now());
+        //app->GetObject<PacketSink> ()->Stop(Simulator::Now());
+    }
+
+/*
+    PacketSinkHelper sinkHelper ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (),15));
+    ApplicationContainer sinkApp = sinkHelper.Install (newMEC);
+    sinkApp.Start(Simulator::Now());
+    //sink = StaticCast<PacketSink> (sinkApp.Get (0));
+
+    Ptr < Ipv4 > ipv4 = newMEC->GetObject < Ipv4 > ();
+    //Ptr < Address > addr = newMEC->GetObject < Address > ();
+    Ipv4InterfaceAddress iaddr = ipv4->GetAddress(1, 0);
+    Ipv4Address addri = iaddr.GetLocal();
+
+    NS_LOG_UNCOND(addri);
+    OnOffHelper migration ("ns3::TcpSocketFactory", Address (InetSocketAddress (addri, 15)));
+    migration.SetAttribute ("PacketSize", UintegerValue (1500));
+    migration.SetAttribute ("OnTime", StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
+    migration.SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
+    migration.SetAttribute ("DataRate", DataRateValue (DataRate ("1Mbps")));
+    migration.SetAttribute ("MaxBytes", UintegerValue (2000000));
+    ApplicationContainer migrationApp = migration.Install (oldMEC);
+    migrationApp.Start(Simulator::Now());*/
+}
+
+
 void NotifyConnectionEstablishedUe(std::string context,
     uint64_t imsi,
     uint16_t cellid,
@@ -120,7 +204,17 @@ void NotifyHandoverStartUe(std::string context,
     std::stringstream ueId;
     ueId << "./v2x_temp/" << cellid << "/" << rnti;
     remove(ueId.str().c_str());
-
+    if (type==1)
+    {
+        migrateService(imsi, targetCellId,type);
+    }
+    else
+    {
+        if (type==2)
+        {
+            migrateService(imsi, targetCellId,type);
+        }
+    }
     ++handNumber;
 }
 
@@ -244,40 +338,6 @@ void ShowTime() {
     Simulator::Schedule(Seconds(0.5), & ShowTime);
 }
 
-void requestService(Ptr < Node > ueNode, Ptr < Node > MECNode, Ipv4Address ueAddress) {
-    Time interPacketInterval = MilliSeconds(10);
-    // Install and start applications on UEs and remote host
-    uint16_t dlPort = 1100;
-    uint16_t ulPort = 2000;
-    ApplicationContainer clientApps;
-    ApplicationContainer serverApps;
-    PacketSinkHelper dlPacketSinkHelper("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), dlPort));
-    serverApps.Add(dlPacketSinkHelper.Install(ueNode));
-
-    UdpClientHelper dlClient(ueAddress, dlPort);
-    dlClient.SetAttribute("Interval", TimeValue(interPacketInterval));
-    dlClient.SetAttribute("MaxPackets", UintegerValue(1000000));
-    clientApps.Add(dlClient.Install(MECNode));
-
-    ++ulPort;
-    PacketSinkHelper ulPacketSinkHelper("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), ulPort));
-    serverApps.Add(ulPacketSinkHelper.Install(MECNode));
-
-    Ptr < Ipv4 > ipv4 = MECNode->GetObject < Ipv4 > ();
-    Ipv4InterfaceAddress iaddr = ipv4->GetAddress(1, 0);
-    Ipv4Address addri = iaddr.GetLocal();
-    NS_LOG_UNCOND(addri);
-    UdpClientHelper ulClient(addri, ulPort);
-    ulClient.SetAttribute("Interval", TimeValue(interPacketInterval));
-    ulClient.SetAttribute("MaxPackets", UintegerValue(1000000));
-    clientApps.Add(ulClient.Install(ueNode));
-
-    serverApps.Start(MilliSeconds(500));
-    clientApps.Start(MilliSeconds(500));
-}
-
-// todo
-void migrateService() {}
 
 int
 main(int argc, char * argv[]) {
@@ -333,13 +393,14 @@ main(int argc, char * argv[]) {
 
     Ptr < Node > pgw = epcHelper->GetPgwNode();
 
-    NodeContainer ueNodes;
     NodeContainer enbNodes;
     enbNodes.Create(number_of_mc);
     ueNodes.Create(number_of_ue);
 
     NodeContainer MecContainer;
-    MecContainer.Create(number_of_mc);
+    MecContainer.Create(2);
+    mec = MecContainer.Get(0);
+    mecdelay = MecContainer.Get(1);
 
     // Create a single RemoteHost
     NodeContainer remoteHostContainer;
@@ -357,7 +418,11 @@ main(int argc, char * argv[]) {
 
     NetDeviceContainer MecDevices;
     NetDeviceContainer PgwDevice;
-    for (uint16_t u = 0; u < number_of_mc; u++) {
+    for (uint16_t u = 0; u < MecContainer.GetN(); u++) {
+        if (u==1)
+        {
+            p2ph.SetChannelAttribute("Delay", TimeValue(MilliSeconds(100)));
+        }
         NetDeviceContainer c = p2ph.Install(pgw, MecContainer.Get(u));
         PgwDevice.Add(c.Get(0));
         MecDevices.Add(c.Get(1));
@@ -372,7 +437,7 @@ main(int argc, char * argv[]) {
     //Ipv4AddressHelper internetIpv4 ("1.0.0.0", "255.0.0.0");
     Ipv4AddressHelper ipv4h;
     ipv4h.SetBase("1.0.0.0", "255.0.0.0");
-    for (uint16_t r = 0; r < number_of_mc; ++r) {
+    for (uint16_t r = 0; r < MecContainer.GetN(); ++r) {
         NetDeviceContainer ndc;
         ndc.Add(PgwDevice.Get(r));
         ndc.Add(MecDevices.Get(r));
@@ -384,7 +449,7 @@ main(int argc, char * argv[]) {
     Ipv4StaticRoutingHelper ipv4RoutingHelper;
 
     uint16_t j = 1;
-    for (uint16_t u = 0; u < number_of_mc; u++) {
+    for (uint16_t u = 0; u < MecContainer.GetN(); u++) {
         std::stringstream ss;
         ss << u + j;
         Ptr < Ipv4StaticRouting > MecRouting = ipv4RoutingHelper.GetStaticRouting(MecContainer.Get(u)->GetObject < Ipv4 > ());
@@ -393,9 +458,9 @@ main(int argc, char * argv[]) {
     }
 
     Ptr < Ipv4StaticRouting > PgwRouting = ipv4RoutingHelper.GetStaticRouting(pgw->GetObject < Ipv4 > ());
-    //PgwRouting->AddNetworkRouteTo (Ipv4Address ("1.0.0.0"),Ipv4Mask ("255.0.0.0"),1);
+    PgwRouting->AddNetworkRouteTo (Ipv4Address ("1.0.0.0"),Ipv4Mask ("255.0.0.0"),1);
     j = 2;
-    for (uint16_t u = 0; u < number_of_mc; u++) {
+    for (uint16_t u = 0; u < MecContainer.GetN(); u++) {
         std::stringstream ss;
         ss << u + j;
         PgwRouting->AddHostRouteTo(Ipv4Address(("1.0.0." + ss.str()).c_str()), j + 1);
@@ -483,16 +548,24 @@ main(int argc, char * argv[]) {
 
     lteHelper->Attach(ueLteDevs);
     lteHelper->AddX2Interface(enbNodes);
+    lteHelper->EnablePhyTraces ();
+    lteHelper->EnableMacTraces ();
+    //lteHelper->EnableRlcTraces ();
+    //lteHelper->EnablePdcpTraces ();
+    //Ptr<RadioBearerStatsCalculator> rlcStats = lteHelper->GetRlcStats ();
+    //rlcStats->SetAttribute ("EpochDuration", TimeValue (Seconds (1.0)));
+    //Ptr<RadioBearerStatsCalculator> pdcpStats = lteHelper->GetPdcpStats ();
+    //pdcpStats->SetAttribute ("EpochDuration", TimeValue (Seconds (1.0)));
 
     // checkDelay(ueNodes.Get(0), MecContainer.Get(0), ueIpIface.GetAddress(0));
-    for (uint16_t i = 1; i < 10; ++i)
-        Simulator::Schedule(Seconds(i), &checkDelay, ueNodes.Get(0), MecContainer.Get(0), ueIpIface.GetAddress(0));
+    //for (uint16_t i = 1; i < 10; ++i)
+    //    Simulator::Schedule(Seconds(i), &checkDelay, ueNodes.Get(0), MecContainer.Get(0), ueIpIface.GetAddress(0));
 
-    Simulator::Schedule(Seconds(5), &executeHandover, lteHelper, 1, 5, ueLteDevs, enbLteDevs);
+    //Simulator::Schedule(Seconds(5), &executeHandover, lteHelper, 1, 5, ueLteDevs, enbLteDevs);
 
     for (uint32_t u = 0; u < ueNodes.GetN (); ++u)
     {
-      requestService(ueNodes.Get(u), MecContainer.Get(u), ueIpIface.GetAddress(u));
+      requestService(ueNodes.Get(u), MecContainer.Get(0), ueIpIface.GetAddress(u));
     }
 
     Ptr < OutputStreamWrapper > routingStream = Create < OutputStreamWrapper >
@@ -509,13 +582,14 @@ main(int argc, char * argv[]) {
         anim.UpdateNodeColor(ueNodes.Get(i), 255, 0, 0);
     }
     Simulator::Schedule(Seconds(1), &ShowTime);
+    //Simulator::Schedule(Seconds(2.5), &migrateService, 1,1, MecContainer,pgw);
 
     FlowMonitorHelper flowmon;
     Ptr < FlowMonitor > monitor = flowmon.InstallAll();
     // Uncomment to enable PCAP tracing
     //p2ph.EnablePcapAll("lena-simple-epc-backhaul");
 
-    Simulator::Stop(Seconds(20));
+    Simulator::Stop(Seconds(10));
 
     /*--------------HANDOVER NOTIFICATIONS-------------------------*/
     Config::Connect("/NodeList/*/DeviceList/*/LteUeRrc/ConnectionEstablished",
