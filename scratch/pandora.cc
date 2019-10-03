@@ -76,7 +76,7 @@ unsigned int exp_mean_window = 3;
 double qosLastValue = 0;
 double qoeLastValue = 0;
 
-int cell_ue[number_of_mc][number_of_ue];
+//int cell_ue[number_of_mc][number_of_ue];
 
 NodeContainer ueNodes;
 Ptr < Node > mec;
@@ -181,13 +181,13 @@ void NotifyConnectionEstablishedUe(std::string context,
     outfile.close();
 
     // zero the node's previous connection
-    for (uint16_t i =0; i < number_of_mc; ++i)
-    {
-        ::cell_ue[i][imsi - 1] = 0;
-    }
+    //for (uint16_t i =0; i < number_of_mc; ++i)
+    //{
+        //::cell_ue[i][imsi - 1] = 0;
+    //}
 
-    // record the current cell in the matrix
-    ::cell_ue[cellid - 1][imsi - 1] = rnti;
+    //// record the current cell in the matrix
+    //::cell_ue[cellid - 1][imsi - 1] = rnti;
 }
 
 void NotifyHandoverStartUe(std::string context,
@@ -294,8 +294,8 @@ uint16_t getServingCellId(uint16_t ueId)
     uint16_t servingCellId = 0;
     for (uint16_t i = 0; i < number_of_mc; ++i)
     {
-        if (::cell_ue[i][ueId - 1] != 0)
-            servingCellId = i;
+        //if (::cell_ue[i][ueId - 1] != 0)
+            //servingCellId = i;
     }
     return servingCellId;
 }
@@ -374,9 +374,9 @@ main(int argc, char * argv[]) {
     lteHelper->SetSchedulerAttribute("PssFdSchedulerType", StringValue("CoItA")); // PF scheduler type in PSS
     lteHelper->SetHandoverAlgorithmType("ns3::A2A4RsrqHandoverAlgorithm");
     lteHelper->SetHandoverAlgorithmAttribute("ServingCellThreshold",
-    UintegerValue(34));
+    UintegerValue(32));
     lteHelper->SetHandoverAlgorithmAttribute("NeighbourCellOffset",
-    UintegerValue(0));
+    UintegerValue(4));
     lteHelper->EnableTraces();
 
     // Propagation Parameters
