@@ -54,15 +54,15 @@ double TxRate = 0;
 bool useCbr = false;
 bool verbose = false;
 
-const int number_of_ue = 1;
+const int number_of_ue = 22;
 
-const uint16_t number_of_mc = 7;
+const uint16_t number_of_mc = 56;
 
 const int node_enb = number_of_mc;
 
 uint16_t n_cbr = useCbr ? number_of_mc: 0;
 
-int mcTxPower = 40;
+int mcTxPower = 48;
 
 double simTime = 1;
 
@@ -92,7 +92,6 @@ void requestService(Ptr < Node > ueNode, Ptr < Node > MECNode, Ipv4Address ueAdd
     Time interPacketInterval = MilliSeconds(10);
     // Install and start applications on UEs and remote host
     uint16_t dlPort = 1100;
-    uint16_t ulPort = 2000;
     PacketSinkHelper dlPacketSinkHelper("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), dlPort));
     serverApps_G.Add(dlPacketSinkHelper.Install(ueNode));
 
@@ -114,7 +113,7 @@ void requestService(Ptr < Node > ueNode, Ptr < Node > MECNode, Ipv4Address ueAdd
     clientApps_G.Add(ulClient.Install(ueNode));*/
 
     //serverApps_G.Start(MilliSeconds(500));
-    clientApps_G.Start(MilliSeconds(500));
+    clientApps_G.Start(Seconds(200));
     //clientApps_G.Stop(MilliSeconds(2500));
 
 }
@@ -204,17 +203,17 @@ void NotifyHandoverStartUe(std::string context,
     std::stringstream ueId;
     ueId << "./v2x_temp/" << cellid << "/" << rnti;
     remove(ueId.str().c_str());
-    if (type==1)
-    {
-        migrateService(imsi, targetCellId,type);
-    }
-    else
-    {
-        if (type==2)
-        {
-            migrateService(imsi, targetCellId,type);
-        }
-    }
+    // if (type==1)
+    // {
+    //     migrateService(imsi, targetCellId,type);
+    // }
+    // else
+    // {
+    //     if (type==2)
+    //     {
+    //         migrateService(imsi, targetCellId,type);
+    //     }
+    // }
     ++handNumber;
 }
 
@@ -300,8 +299,8 @@ uint16_t getServingCellId(uint16_t ueId)
     return servingCellId;
 }
 
-void executeHandover(Ptr <LteHelper> lteHelper, 
-    uint16_t imsi, 
+void executeHandover(Ptr <LteHelper> lteHelper,
+    uint16_t imsi,
     uint16_t targetCellId,
     NetDeviceContainer ueLteDevs,
     NetDeviceContainer enbLteDevs
@@ -313,7 +312,7 @@ void executeHandover(Ptr <LteHelper> lteHelper,
 }
 
 void checkDelay(Ptr < Node > ueNode,
-    Ptr < Node > MECNode, 
+    Ptr < Node > MECNode,
     Ipv4Address ueAddress
     )
 {
@@ -344,8 +343,11 @@ main(int argc, char * argv[]) {
     Time simTime = MilliSeconds(1900);
     Time interPacketInterval = MilliSeconds(100);
 
-    LogComponentEnable ("UdpEchoClientApplication", LOG_LEVEL_INFO);
-  LogComponentEnable ("UdpEchoServerApplication", LOG_LEVEL_INFO);
+    //LogComponentEnable ("UdpEchoClientApplication", LOG_LEVEL_INFO);
+    //LogComponentEnable ("UdpEchoServerApplication", LOG_LEVEL_INFO);
+    //LogComponentEnable ("PandHandoverAlgorithm", LOG_LEVEL_ALL);
+    LogComponentEnable ("HoveHandoverAlgorithm", LOG_LEVEL_ALL);
+    //LogComponentEnable ("LteEnbRrc", LOG_LEVEL_ALL);
 
     ConfigStore inputConfig;
     inputConfig.ConfigureDefaults();
@@ -365,14 +367,14 @@ main(int argc, char * argv[]) {
     // ------------------------- lte and epc helper ----------------------
     Ptr < LteHelper > lteHelper = CreateObject < LteHelper > ();
     Ptr < EpcHelper > epcHelper;
-    epcHelper = CreateObject < NoBackhaulEpcHelper > ();
+    epcHelper = CreateObject < PointToPointEpcHelper > ();
     lteHelper->SetEpcHelper(epcHelper);
 
     // LTE configuration
     lteHelper->SetSchedulerType("ns3::PssFfMacScheduler");
     lteHelper->SetSchedulerAttribute("nMux", UintegerValue(1)); // the maximum number of UE selected by TD scheduler
     lteHelper->SetSchedulerAttribute("PssFdSchedulerType", StringValue("CoItA")); // PF scheduler type in PSS
-    lteHelper->SetHandoverAlgorithmType("ns3::A2A4RsrqHandoverAlgorithm");
+    lteHelper->SetHandoverAlgorithmType("ns3::HoveHandoverAlgorithm");
     lteHelper->SetHandoverAlgorithmAttribute("ServingCellThreshold",
     UintegerValue(32));
     lteHelper->SetHandoverAlgorithmAttribute("NeighbourCellOffset",
@@ -483,56 +485,17 @@ main(int argc, char * argv[]) {
     remoteHostMobility.Install(MecContainer);
 
     // User Devices mobility
-    Ns2MobilityHelper ue_mobil = Ns2MobilityHelper("mobil/5961.tcl");
+    Ns2MobilityHelper ue_mobil = Ns2MobilityHelper("mobil/mobility_25_users.tcl");
     MobilityHelper ueMobility;
     MobilityHelper enbMobility;
 
     ue_mobil.Install(ueNodes.Begin(), ueNodes.End());
-
-    // SGW node
-    Ptr < Node > sgw = epcHelper->GetSgwNode();
-
-    // Install Mobility Model for SGW
-    Ptr < ListPositionAllocator > positionAlloc2 = CreateObject < ListPositionAllocator > ();
-    positionAlloc2->Add(Vector(0.0, 50.0, 0.0));
-    MobilityHelper mobility2;
-    mobility2.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-    mobility2.SetPositionAllocator(positionAlloc2);
-    mobility2.Install(sgw);
 
     // Install LTE Devices to the nodes
     NetDeviceContainer enbLteDevs = lteHelper->InstallEnbDevice(enbNodes);
     NetDeviceContainer ueLteDevs = lteHelper->InstallUeDevice(ueNodes);
     //Ipv4Address addr = remoteHostAddr;
     Ipv4AddressHelper s1uIpv4AddressHelper;
-
-    // Create networks of the S1 interfaces
-    s1uIpv4AddressHelper.SetBase("10.0.0.0", "255.255.255.252");
-
-    for (uint16_t i = 0; i < number_of_mc; ++i) {
-        Ptr < Node > enb = enbNodes.Get(i);
-
-        // Create a point to point link between the eNB and the SGW with
-        // the corresponding new NetDevices on each side
-        PointToPointHelper p2ph;
-        DataRate s1uLinkDataRate = DataRate("10Gb/s");
-        uint16_t s1uLinkMtu = 2000;
-        Time s1uLinkDelay = Time(0);
-        p2ph.SetDeviceAttribute("DataRate", DataRateValue(s1uLinkDataRate));
-        p2ph.SetDeviceAttribute("Mtu", UintegerValue(s1uLinkMtu));
-        p2ph.SetChannelAttribute("Delay", TimeValue(s1uLinkDelay));
-        NetDeviceContainer sgwEnbDevices = p2ph.Install(sgw, enb);
-
-        Ipv4InterfaceContainer sgwEnbIpIfaces = s1uIpv4AddressHelper.Assign(sgwEnbDevices);
-        s1uIpv4AddressHelper.NewNetwork();
-
-        Ipv4Address sgwS1uAddress = sgwEnbIpIfaces.GetAddress(0);
-        Ipv4Address enbS1uAddress = sgwEnbIpIfaces.GetAddress(1);
-        //addr = enbS1uAddress;
-
-        // Create S1 interface between the SGW and the eNB
-        epcHelper->AddS1Interface(enb, enbS1uAddress, sgwS1uAddress);
-    }
 
     // Install the IP stack on the UEs
     internet.Install(ueNodes);
@@ -563,10 +526,18 @@ main(int argc, char * argv[]) {
 
     //Simulator::Schedule(Seconds(5), &executeHandover, lteHelper, 1, 5, ueLteDevs, enbLteDevs);
 
-    for (uint32_t u = 0; u < ueNodes.GetN (); ++u)
-    {
-      requestService(ueNodes.Get(u), MecContainer.Get(0), ueIpIface.GetAddress(u));
+    /*-----------------POTENCIA DE TRASMISSAO-----------------*/
+    Ptr<LteEnbPhy> enb0Phy;
+    // todo: set different bandwidth for individual cells
+    for (int i = 0; (unsigned)i < enbLteDevs.GetN(); i++) {
+        enb0Phy = enbLteDevs.Get(i)->GetObject<LteEnbNetDevice>()->GetPhy();
+        enb0Phy->SetTxPower(mcTxPower);
     }
+
+    // for (uint32_t u = 0; u < ueNodes.GetN (); ++u)
+    // {
+    //   requestService(ueNodes.Get(u), MecContainer.Get(0), ueIpIface.GetAddress(u));
+    // }
 
     Ptr < OutputStreamWrapper > routingStream = Create < OutputStreamWrapper >
         ("static-global-routing.routes", std::ios::out);
@@ -589,7 +560,7 @@ main(int argc, char * argv[]) {
     // Uncomment to enable PCAP tracing
     //p2ph.EnablePcapAll("lena-simple-epc-backhaul");
 
-    Simulator::Stop(Seconds(10));
+    Simulator::Stop(Seconds(1000));
 
     /*--------------HANDOVER NOTIFICATIONS-------------------------*/
     Config::Connect("/NodeList/*/DeviceList/*/LteUeRrc/ConnectionEstablished",
